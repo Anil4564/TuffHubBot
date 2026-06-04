@@ -24,12 +24,13 @@ def run_flask():
 GUILD_ID = 1457498197047115897
 SPECIAL_OWNER_ID = 1424590067577655358
 BAN_FILE = "/data/banned_users.txt"
+SCAM_FILE = "/data/scam_trap_channel.txt" # Tuzak kanalını kaydetmek için yeni dosya
 ALLOWED_STAFF_ROLES = ["Mod", "Owner"]
 
 # ==========================================
 # İSTATİSTİK KANAL AYARLARI
 # ==========================================
-STATS_CHANNEL_ID = 1511539350133805117  
+STATS_CHANNEL_ID = 1511941994920804402  
 
 # AGRESSIVE ANTI-NUKE RATELIMITS (Saniyede 1 işlem sınırı)
 LIMIT_TIME = 5.0  # Kaç saniye kontrol edilecek
@@ -56,6 +57,19 @@ def load_banned_users():
             elif line.isdigit():
                 banned_dict[int(line)] = "lifetime"
     return banned_dict
+
+def load_scam_trap_channel():
+    if os.path.exists(SCAM_FILE):
+        with open(SCAM_FILE, "r") as f:
+            content = f.read().strip()
+            if content.isdigit():
+                return int(content)
+    return None
+
+def save_scam_trap_channel(channel_id):
+    os.makedirs(os.path.dirname(SCAM_FILE), exist_ok=True)
+    with open(SCAM_FILE, "w") as f:
+        f.write(str(channel_id))
 
 async def update_server_stats(guild):
     """Sunucu üye sayısına göre ses kanalının adını günceller"""
@@ -217,7 +231,7 @@ class ShadowBot(commands.Bot):
             await asyncio.sleep(60)
 
 bot = ShadowBot()
-scam_trap_channel_id = None
+scam_trap_channel_id = load_scam_trap_channel() # Bot açılırken eski kanalı yükle
 log_channel_id = None  
 
 def is_admin_slash():
@@ -246,7 +260,6 @@ async def send_log(embed):
 async def dynamic_nuke_check(guild, action_type, discord_action):
     if not bot.anti_nuke_status or not guild: return
 
-    # HATALI KISIM DÜZELTİLDİ: "async for entry in ..." yapıldı
     async for entry in guild.audit_logs(action=discord_action, limit=1):
         user = entry.user
         if user.id == bot.user.id or user.id == SPECIAL_OWNER_ID: return
@@ -365,12 +378,14 @@ async def on_message(message):
 # SLASH COMMANDS (ALL ADMINS ONLY)
 # ==========================================
 
-@bot.tree.command(name="anti_nuke", description="Enables or disables the anti-nuke system.")
-@app_commands.describe(durum="True = Enabled, False = Disabled")
+@bot.tree.command(name="createscamtrap", description="Sets the specified channel as a honeypot trap.")
+@app_commands.describe(channel="The channel that will trigger an automatic ban if non-staff members send a message.")
 @is_admin_slash()
-async def assignment_antinuke(interaction: discord.Interaction, durum: bool):
-    bot.anti_nuke_status = durum
-    await interaction.response.send_message(f"🛡️ Anti-Nuke status updated: {durum}", ephemeral=True)
+async def assignment_createscamtrap(interaction: discord.Interaction, channel: discord.TextChannel):
+    global scam_trap_channel_id
+    scam_trap_channel_id = channel.id
+    save_scam_trap_channel(channel.id) # Dosyaya kaydet
+    await interaction.response.send_message(f"🚨 **Honeypot Trap Active!** Any non-staff message in {channel.mention} will result in an immediate automated permanent ban.", ephemeral=True)
 
 @bot.tree.command(name="copyserver", description="Copies all channels and categories.")
 @is_admin_slash()
@@ -506,7 +521,7 @@ async def setup_verify(interaction: discord.Interaction):
 async def setup_ticket(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     embed = discord.Embed(title="📩 Create a Support Ticket", description="Click blue button to open a ticket.", color=discord.Color.blue())
-    await interaction.channel.send(embed=embed, view=TicketOpenView())
+    await interaction.channel.send(embed=embed, view=VerifyView()) # Düzeltildi: Doğru view çağrıldı
     await interaction.followup.send("✅ Posted.", ephemeral=True)
 
 # ==========================================
